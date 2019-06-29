@@ -1,0 +1,168 @@
+/* <style type=text/css> */
+
+/* margin: top right bottom left */
+
+html {
+    overflow-y: scroll; /* forces a scrollbar */
+    height: 100%;       /* needed to force page to the bottom */
+}
+
+body {
+    font-family: Arial, Verdana, "Lucida Grande", "Trebuchet MS", Helvetica, sans-serif;
+    font-style: normal;
+    font-weight: normal;
+    margin: 0px 0px 0px 0px;
+    padding: 0px 0px 0px 0px;
+    font-size: medium;
+    background-color: white;
+    color: black;
+    height: 100%;
+}
+
+
+table.maintable {
+    height: 100%;
+    /* border: 5px solid black; */ /* debugging */
+}
+
+td {
+    /* border: 5px solid black; */  /* debugging */
+}
+
+/*
+ * left header, right header and main sections
+ */
+td.left {
+    vertical-align: top;
+    border-right: 1px solid #ccc;
+    padding: 10px 10px 10px 10px;
+    line-height: 1.5em;
+}
+
+td.right {
+    vertical-align: top;
+    padding: 0px 10px 0px 10px;
+    width: 100%;
+}
+
+div.main {
+    padding: 0px 0px 0px 0px;
+}
+
+div.centeralign {
+    text-align: center;
+}
+
+/*
+ * links 
+ */
+a {
+    text-decoration: none;
+    color: #2020a0;
+    /* color: #0b6cad; */
+    outline:none;
+}	
+a:hover {
+    text-decoration: underline;
+}	
+a img {
+	border: none;
+}
+a.bold {
+    font-weight: bold;
+}
+a.invisible {
+    color: white;
+}
+
+/*
+ * lists
+ */
+/* add spacing between list items. */
+div li {
+    margin-top: 10px;
+}
+/* change list item bullets. */
+div ul {
+    list-style-type: 	circle;
+}
+/* add spacing between list items. */
+div dt {
+    margin-top: 15px;
+    margin-bottom: 5px;
+}
+div dd {
+    margin-bottom: 10px;
+}
+
+/*
+ * Headers
+ */
+h2 {
+    font-family: "Times New Roman", Times, Georgia, serif;
+    font-weight: bold;
+    font-size: 1.0em;
+    /* margin: 0px 0px 0px 0px; */
+    /* line-height: 1.9em; */
+    /* padding-bottom: 10px; */
+    text-transform: uppercase;
+/*     text-align: center; */
+    letter-spacing: 2px;
+    /* border-top: 0px; */
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+    /* margin-top: 25px; */
+}
+
+/* this is for the header at the top of the page */
+h2.noborder {
+    border-top: 0px;
+    padding-top: 0px;
+    margin-top: 0px;
+}
+
+h3 {
+    font: bold 1em Georgia, "Times New Roman", Times, serif;
+    margin: 0px 0px 0px 0px;
+    font-size: 1.0em;
+}
+
+/*
+ *
+ * .smallsize {
+ *     font-size:        	90%;
+ *     padding-top:     	7px;
+ * }
+ * 
+ * .bigsize {
+ *     font-size:          120%;
+ * }
+ * 
+ * div.shifted {
+ *     margin-left: 	+0.3in;
+ * }
+ * 
+ * hr {
+ *     width:              100%;
+ *     height:             2px;
+ * }
+ * 
+ * pre {
+ *     color:              green;
+ *     font-family:        "Courier New", Courier, monospace;
+ *     font-size:          110%;
+ * }
+ * 
+ * tt {
+ *         color: green;
+ *         font-family: "Courier New", Courier, monospace;
+ *         font-size: 110%;
+ * }
+ * 
+ * .greybackground {
+ *     background-color: #d3d3d3;
+ * }
+ *
+ */
+
+/* </style> */

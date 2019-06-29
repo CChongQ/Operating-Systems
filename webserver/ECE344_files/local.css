@@ -1,0 +1,96 @@
+/* <style type=text/css> */
+
+body {
+    font-family: "Times New Roman", Helvetica;
+    /* font-style: normal; */
+    /* font-weight: normal; */
+    /* margin: 0px 0px 0px 0px; */
+    /* padding: 0px 0px 0px 0px; */
+    font-size: normal;
+    /* background-color: white; */
+    /* color: black; */
+    /* height: 100%; */
+}
+
+h2 {
+    font-family: Helvetica;
+    /* font-weight: bold; */
+    font-size: 1.2em;
+    text-transform: none;
+    letter-spacing: 1px;
+    /* border-top: 1px solid #ccc; */
+    /* padding-top: 10px; */
+}
+
+h3 {
+    font-family: Helvetica;
+    /* margin: 0px 0px 0px 0px; */
+    /* font-size: 1.0em; */
+}
+
+a {
+    font-weight: bold;
+    text-decoration: normal;
+    white-space: nowrap;
+    font-family: Monospace;
+    font-size: 1.1em;
+}
+
+html {
+    overflow-x: auto;
+}
+
+div.main {
+    padding: 0px 8px 0px 8px;
+}
+
+table.maintable {
+    width: 100%;
+    height: auto;
+    /* border: 2px solid black; */
+}
+
+th,td {
+    /* border: 2px solid black; */
+}
+
+table.centertable {
+    border-spacing: 10px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.col2-right td:nth-child(2) {text-align: right}
+.col3-center td:nth-child(3) {text-align: right}
+.col4-center td:nth-child(4) {text-align: right}
+.col5-center td:nth-child(5) {text-align: right}
+.col6-center td:nth-child(6) {text-align: center}
+
+img.displayed {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+/*
+td.leftcol {
+    text-align:         left;
+    width:              18%;
+}
+
+td.midcol {
+    text-align:         center;
+    width:              24%;
+}  
+
+td.rightcol {
+    text-align:         right;
+    width:              10%;
+}
+
+h3 {
+    background-color:  #d3d3d3;
+    font-size:        	120%;
+}
+*/
+
+/* </style> */

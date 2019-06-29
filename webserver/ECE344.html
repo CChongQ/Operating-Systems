@@ -1,0 +1,590 @@
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lab 3, ECE344, Spring 2019</title>
+<link rel="stylesheet" type="text/css" href="ECE344_files/default.css">
+<link rel="stylesheet" type="text/css" href="ECE344_files/local.css">
+
+</head><body><table class="maintable">
+<tbody><tr>
+
+<td>
+<div class="centeralign">
+<h1>Operating Systems</h1>
+<h2 class="noborder">ECE344, Spring 2019<br>
+University of Toronto</h2>
+Labs and website created by: <a href="http://www.eecg.toronto.edu/~ashvin/">Ashvin Goel</a><br></div>
+</td>
+
+<td>
+<div style="text-align:right">
+<img src="ECE344_files/deadlock.jpg" alt="Deadlock" height="200">
+</div>
+</td>
+
+</tr>
+</tbody></table>
+
+<div class="main">
+
+<h2>Quick Links</h2>
+
+<div>
+<a href="http://individual.utoronto.ca/davidlion/ece344/lab-assignments.html">Lab Assignments</a>  
+<a href="https://q.utoronto.ca/">Quercus Website</a>  
+</div>
+<h2>Lab 3: A Preemptive, User-Level Thread Package</h2>
+
+<h4>Due Date: March 3, 11:59pm</h4>
+
+<p>In the previous lab, you implemented a cooperative, user-level thread package
+system in which <tt>thread_yield</tt> causes control to be passed from one
+thread to the next one. This lab has four goals.</p>
+
+<p>First, you will implement preemptive threading, in which simulated "timer
+interrupts" cause the system to switch from one thread to another.</p>
+
+<p>Second, you will implement the <tt>thread_sleep</tt> and <tt>thread_wakeup</tt> scheduling functions. These functions will enable implementing <b>blocking</b> mutual exclusion and synchronization.</p>
+
+<p>Third, you will use the <tt>thread_sleep</tt> and <tt>thread_wakeup</tt> functions to implement <tt>thread_wait</tt>, which will block a thread until a target thread has finished executing.</p>
+
+<p>Finally, you will implement blocking locks for mutual exclusion, and
+condition variables for synchronization.</p>
+
+<p>For this lab, we are not providing any additional code. You will be working
+with the code you have implemented in the <tt>threads</tt> directory in Lab
+2.</p>
+
+<h2>Timer Signals</h2>
+
+<p>User-level code cannot use hardware timer interrupts directly. Instead,
+POSIX operating systems provide a software mechanism called <i>signals</i>
+ that
+can be used to simulate "interrupts" at the user level. These signals 
+interrupt your program and give you a chance to handle that interrupt. 
+For example, when you hit <tt>Ctrl-C</tt> to kill a program, that causes
+ the OS to send the SIGINT signal to your program. Most programs don't 
+handle this signal, so by default, the OS kills the process. However, if
+ you wanted to save the state of your program before it was killed 
+(e.g., a text editor could save any unsaved files), you can register a 
+handler with the OS for SIGINT. Then when the user hits <tt>Ctrl-C</tt>, the OS calls your handler, you could write out the state of your program, and then exit.</p>
+
+<p>More generally, signals are a form of asynchronous, inter-process 
+communication mechanism. A signal can be sent from one process to 
+another, or from a process to itself. We will use the <strong>latter</strong>
+ method to have the process that invokes your user-level scheduler, 
+i.e., your thread library functions, deliver timer signals to itself.</p>
+  
+<p>The operating system delivers a signal to a target (recipient) process by
+  interrupting the normal flow of execution of the process. Execution can be
+  interrupted after any instruction. A process can register a signal handler,
+  which is invoked when the signal is delivered. After the signal handler
+  finishes executing, the normal flow of execution of the process is
+  resumed. Notice the similarities between signals and hardware interrupts.</p>
+
+<p>As signals can be delivered after any instruction, signal handling is
+ prone to race conditions. For example, if you increment a counter (<tt>counter = counter + 1</tt>)
+ during normal execution as well as in your signal handler code, the 
+increment operation may not work correctly because it is not atomic, and
+ the signal may be delivered in between the instructions implementing 
+the increment operation. To avoid this problem, you should disable 
+signal delivery while the counter is being updated.</p>
+
+<p>Please read a <a href="http://en.wikipedia.org/wiki/Unix_signal">short
+introduction to signals</a> to understand how they work in more detail. Make
+sure to read the "Risks" section or else you may not able to answer some
+questions below.</p>
+
+<p>Now go over the code in the files <tt>interrupt.h</tt>
+and <tt>interrupt.c</tt>. You do not need to understand all the code, but it
+will be helpful to know how the code should be used. We will use the terms
+"interrupts" and "signals" interchangeably below.</p>
+
+<dl>
+
+<dt><b>void register_interrupt_handler(int verbose):</b></dt>
+  
+<dd>This call installs a timer signal handler in the calling program using
+the <a href="http://linux.die.net/man/2/sigaction"><tt>sigaction</tt></a> system
+call. When a timer signal fires, the function <tt>interrupt_handler</tt> in
+the <tt>interrupt.c</tt> file is invoked. With the <tt>verbose</tt> flag, a
+message is printed when the handler function runs.</dd>
+
+<dt><b>int interrupts_set(int enabled):</b></dt>
+
+<dd>This function enables timer signals when enabled is 1, and disables (or
+blocks) them when enabled is 0. We call the current enabled or disabled state of
+the signal the <i>signal state</i>. This function also returns whether the
+signals were previously enabled or not (i.e., the previous signal state). Notice
+that the operating system ensures that these two operations (reading previous
+state, and updating it) are performed atomically when
+the <a href="http://linux.die.net/man/2/sigprocmask"><tt>sigprocmask</tt></a>
+system call is issued. Your code should use this function to disable signals
+when running any code that is
+a <a href="http://en.wikipedia.org/wiki/Critical_section"><i>critical
+section</i></a> (i.e., code that accesses data that is shared by multiple
+threads).<br><br>
+
+Why does this function return the previous signal state? The reason is that it
+allows "stacking" calls to this function. The typical usage of this function is
+as follows:
+
+<pre>fn() {
+    /* disable signals, store the previous signal state in "enabled" */  
+    int enabled = interrupts_set(0);
+    /* critical section */
+    interrupts_set(enabled);
+}
+</pre>
+
+The first call to <tt>interrupts_set</tt> disables signals. The second call
+restores the signal state to its previous state, i.e., the signal state before
+the first call to <tt>interrupts_set</tt>, rather than unconditionally enabling
+signals. This is useful because the caller of the function <tt>fn</tt> may be
+expecting signals to remain disabled after the function <tt>fn</tt> finishes
+executing. For example:
+
+<pre>fn_caller() {
+    int enabled = interrupts_set(0);
+    /* begin critical section */
+    fn();
+    /* code expects signals are still disabled */
+    ...
+    /* end critical section */
+    interrupts_set(enabled);
+}
+</pre>
+
+Notice how signal disabling and enabling is performed in "stack" order, so that
+the signal state remains disabled after <tt>fn</tt> returns.<br><br>
+
+The functions <tt>interrupts_on</tt> and <tt>interrupts_off</tt> are simple
+wrappers for the <tt>interrupt_set</tt> function.
+</dd>
+
+<dt><b>int interrupts_enabled():</b></dt>
+
+<dd>This function returns whether signals are enabled or disabled currently. You
+can use this function to check (i.e., assert) whether your assumptions about the
+signal state are correct.</dd>
+
+<dt><b>void interrupts_quiet():</b></dt>
+
+<dd>This function turns off printing signal handler messages.</dd>
+
+</dl>
+
+<p>To help you understand how this code works, we have provided you
+the <tt>show_handler</tt> program. Look at the <tt>show_handler.c</tt> file and
+make sure you understand the output of the <tt>show_handler</tt> program.</p>
+
+<h2>Setup</h2>
+
+<p>You will be doing this lab within the <tt>threads</tt> directory that you
+created in Lab 2. So make sure to go over the <a href="http://individual.utoronto.ca/davidlion/ece344/lab2.html#setup">setup
+instructions</a> for Lab 2, if you have not done so previously.</p>
+
+<p>Make sure to commit all your previous changes (or discard any uncommitted
+changes) in your local repository, and then run the following commands to get
+started with this lab.</p>
+
+<pre>cd ~/ece344
+git tag Lab3-start
+cd threads
+make
+</pre>
+
+<h2>Preemptive Threading</h2>
+
+<p>Now you are ready to implement preemptive threading using the timer signals
+described above. However, before you do so, make sure that you can answer the
+following questions before proceeding any further.</p>
+
+<ol>
+
+<li>What is the name of the signal that you will be using to implement
+  preemptive threading?</li>
+
+<li>Which system call is used by the process to deliver signals to itself?</li>
+
+<li>How often is this signal delivered?</li>
+
+<li>When this signal is delivered, which function in <tt>thread.c</tt> is
+invoked? What would this function do when it is invoked in
+the <tt>show_handler</tt> program?</li>
+
+<li>Is the signal state enabled or disabled when the function
+in <tt>thread.c</tt> above is invoked?  If the signal is enabled, could it cause
+problems? If the signal is disabled, what code will enable them? Hint: look
+for <tt>sa_mask</tt> in <tt>interrupt.c</tt>.</li>
+
+<li>What does <tt>unintr_printf</tt> do? Why is it needed? Will you need other
+  similar functions?  Reread
+  a <a href="http://en.wikipedia.org/wiki/Unix_signal">short introduction to
+  signals</a> to find out.
+</li>
+
+</ol>
+
+<p>Signals can be sent to the process at any time, even when a thread is in the
+middle of a <tt>thread_yield</tt>, <tt>thread_create</tt>,
+or <tt>thread_exit</tt> call. It is a very bad idea to allow multiple threads to
+access shared variables (such as your ready queue) at the same time. You should
+therefore
+ensure <a href="http://en.wikipedia.org/wiki/Mutual_exclusion"><i>mutual
+exclusion</i></a>, i.e., only one thread can be in a critical section (accessing
+the shared variables) in your thread library at a time.</p>
+
+<p>A simple way to ensure mutual exclusion is to disable signals when you enter
+procedures of the thread library and restore the signal state when you
+leave.</p>
+
+<p>Hint: think carefully about the invariants you want to maintain in your
+thread functions about when signals are enabled and when they are disabled. Make
+sure to use the <tt>interrupts_enabled</tt> function to check your
+assumptions.</p>
+
+<p>Note that as a result of thread context switches, the thread that disables
+signals may not be the one enables them. In particular, recall
+that <tt>setcontext</tt> <a href="http://individual.utoronto.ca/davidlion/ece344/lab2.html#context-switch">restores the
+register state</a> saved by <tt>getcontext</tt>. The signal state is saved
+when <tt>getcontext</tt> is called (recall the <tt>show_interrupt</tt> function
+in the <tt>show_ucontext.c</tt> file is Lab 2), and restored
+by <tt>setcontext</tt>.  As a result, if you would like your code to be running
+with a specific signal state (i.e., disabled or enabled)
+when <tt>setcontext</tt> is called, make sure that <tt>getcontext</tt> is called
+with the same signal state. Maintain the right invariants, and you'll have no
+trouble dealing with context switches.</p>
+
+<p>It will be helpful to go over
+the <a href="http://linux.die.net/man/2/setcontext">manual pages</a> of the
+context save and restore calls again.</p>
+
+<p>Go ahead and implement preemptive threading by adding signal disabling and
+enabling code in your thread library in <tt>thread.c</tt>.</p>
+
+<p>After you implement preemptive threading, you can test your code by running the <tt>test_preemptive</tt> program. To check whether this program worked correctly, you can run the following tester script:</p>
+
+<pre>    /cad2/ece344s/tester/scripts/lab3-01-preemptive.py
+</pre>
+
+<p>This script is run as part of testing Lab 3. Adding the <tt>-v</tt> option to the script above will provide more information about what output is expected by the tester.</p>
+
+<h2>Sleep and Wakeup</h2>
+
+<p>Now that you have implemented preemptive threading, you will extend your
+threading library to implement the <tt>thread_sleep</tt>
+and <tt>thread_wakeup</tt> functions. These functions will allow implementing
+mutual exclusion and synchronization primitives. In real operating systems,
+these functions would also be used to suspend and wake up a thread that performs
+IO with slow devices, such as disks and networks. The <tt>thread_sleep</tt>
+primitive blocks or suspends a thread when it is waiting on an event, such as a
+mutex lock becoming available or the arrival of a network
+packet. The <tt>thread_wakeup</tt> primitive awakens one or more threads that
+are waiting for the corresponding event.</p>
+
+<p>The <tt>thread_sleep</tt> and <tt>thread_wakeup</tt> functions that you will
+be implementing for this lab are summarized here:</p>
+
+<dl>
+  
+<dt><b>Tid thread_sleep(struct wait_queue *queue):</b></dt>
+  
+<dd>
+This function suspends the caller and then runs some other thread. The calling
+thread is put in a wait queue passed as a parameter to the
+function. The <tt>wait_queue</tt> data structure is similar to the run queue,
+but there can be many wait queues in the system, one per type of event or
+condition. Upon success, this function returns the identifier of the thread that
+took control as a result of the function call. The calling thread does not see
+this result until it runs later. Upon failure, the calling thread continues
+running, and returns one of these constants:
+
+<ul>
+
+<li><tt>THREAD_INVALID:</tt> alerts the caller that the queue is invalid,
+e.g., it is NULL.</li>
+
+<li><tt>THREAD_NONE:</tt> alerts the caller that there are no more 
+threads, other than the caller, that are ready to run. Note that if the 
+thread were to sleep in this case, then your program would hang because 
+there would be no runnable thread. </li>
+
+</ul>
+</dd>
+
+<dt><b>int thread_wakeup(struct wait_queue *queue, int all):</b></dt>
+  
+<dd>
+This function wakes up one or more threads that are suspended in the wait
+queue. These threads are put in the ready queue. The calling thread continues to
+execute and receives the result of the call. When "all" is 0, then one thread is
+woken up. In this case, you should wake up threads in FIFO order, i.e., first
+thread to sleep must be woken up first. When "all" is 1, all suspended threads
+are woken up. The function returns the number of threads that were woken up. It
+should return zero if the queue is invalid, or there were no suspended threads
+in the wait queue.
+</dd>
+
+</dl>
+
+<p>You will need to implement a <tt>wait_queue</tt> data structure before
+implementing the functions above. The <tt>thread.h</tt> file provides the
+interface for this data structure. As an optimization, note that each thread can
+be in only one queue at a time (a run queue or any one wait queue).</p>
+
+<p>When implementing <tt>thread_sleep</tt>, it will help to think about the
+similarities and differences between this function and <tt>thread_yield</tt>
+and <tt>thread_exit</tt>. Make sure that <tt>thread_sleep</tt> suspends (blocks)
+the current thread rather than spinning (running) in a tight loop. This would
+defeat the purpose of invoking <tt>thread_sleep</tt> because the thread would
+still be using the CPU.</p>
+
+<p>All the thought that you put into ensuring that thread preemption works
+correctly previously will apply to these functions as well. In particular, these
+functions access shared data structures (which ones?), so be sure to enforce
+mutual exclusion.</p>
+
+<p>Go ahead and implement these functions in your thread library
+in <tt>thread.c</tt>.</p>
+
+<p>After you implement the sleep and wakeup functions, you can test your code by
+running the <tt>test_wakeup</tt> and the <tt>test_wakeup_all</tt> programs. To
+check whether these programs worked correctly, you can run the following tester
+commands:</p>
+
+<pre>    /cad2/ece344s/tester/scripts/lab3-02-wakeup.py
+    /cad2/ece344s/tester/scripts/lab3-03-wakeupall.py
+</pre>
+
+<h2>Waiting for Threads to Exit</h2>
+
+<p>Now that you have implemented the <tt>thread_sleep</tt> and <tt>thread_wakeup</tt>
+ functions for suspending and waking up threads, you can use them to 
+implement blocking synchronization primitives in your threads library. 
+You should start by implementing the <tt>thread_wait</tt> function, 
+which will block or suspend a thread until a target thread terminates 
+(or exits). Once the target thread exits, and is <strong>fully destroyed</strong>, the thread that invokes <tt>thread_wait</tt>
+ should continue operation. As an example, this synchronization 
+mechanism can be used to ensure that a program (using a master thread) 
+exits only after all its worker threads have completed their operations.</p>
+
+<p>The <tt>thread_wait</tt> function is summarized below:</p>
+
+<dl>
+
+  <dt><b>int thread_wait(Tid tid):</b></dt>
+  
+  <dd>This function suspends the calling thread until the thread whose 
+identifier is tid terminates. A thread terminates when it invokes <tt>thread_exit</tt>
+ and its state is destroyed. Upon success, this function returns the 
+identifier of the thread that exited. Upon failure, the calling thread 
+continues running, and returns one of these constants:
+
+<ul>
+
+  <li><tt>THREAD_INVALID:</tt> alerts the caller that the identifier tid
+ does not correspond to a valid thread (e.g., any negative value of 
+tid), or it is the current thread.</li>
+
+</ul>
+  </dd>
+
+</dl>
+
+<p>You will need to associate a <tt>wait queue</tt> with each thread. When a thread invokes <tt>thread_wait</tt>, it should sleep on the <tt>wait queue</tt> of the target thread. When the target thread invokes exit, and is about to be destroyed, it should wake up the threads in its <tt>wait queue</tt>.</p>
+
+<p>While this functionality is relatively simple to implement, you will need to ensure that there are no races between <tt>thread_wait</tt> and <tt>thread_exit</tt>. How will you do that?</p>
+
+<p>One issue with implementing <tt>thread_wait</tt> is that a deadlock 
+may occur. For example, if Thread A waits on Thread B, and then Thread B
+ waits on Thread A, then both threads will deadlock. We do not expect 
+you to handle this condition for the lab, but it will be helpful to 
+think about how would implement <tt>thread_wait</tt> to avoid any deadlocks.</p>
+
+<p>Go ahead and implement <tt>thread_wait</tt> in your thread library 
+and update any other relevant functions. After you implement this 
+functionality, you can test your code by running the <tt>test_wait</tt> and <tt>test_wait_kill</tt> programs. To check whether these programs worked correctly, you can run the following tester command:</p>
+
+<pre>    /cad2/ece344s/tester/scripts/lab3-04-wait.py
+</pre>
+
+<h2>Mutex Locks and Condition Variables</h2>
+
+<p>Now you are ready to implement mutual exclusion and synchronization 
+primitives in your threads library. Recall that these primitives form 
+the basis for managing concurrency, which is a core concern for 
+operating systems, so your library would not really be complete without 
+them.</p>
+
+<p>For mutual exclusion, you will implement blocking locks, and for
+synchronization, you will implement condition variables.</p>
+
+<p>The API for the lock functions are described below:</p>
+
+<dl>
+  
+<dt><b>struct lock *lock_create():</b></dt>
+<dd>Create a blocking lock. Initially, the lock should be available. Your code
+should associate a wait queue with the lock so that threads that need to acquire
+the lock can wait in this queue.</dd>
+
+<dt><b>void lock_destroy(struct lock *lock):</b></dt>
+<dd>Destroy the lock. Be sure to check that the lock is available when it is
+being destroyed.</dd>
+
+<dt><b>void lock_acquire(struct lock *lock):</b></dt>
+<dd>Acquire the lock. Threads should be suspended until they can acquire the
+lock, after which this function should return.</dd>
+
+<dt><b>void lock_release(struct lock *lock):</b></dt>
+<dd>Release the lock. Be sure to check that the lock had been acquired by the
+calling thread, before it is released. Wake up all threads that are waiting to
+acquire the lock.</dd>
+
+</dl>
+
+<p>The API for the condition variable functions are described below:</p>
+
+<dl>
+
+<dt><b>struct cv *cv_create():</b></dt>
+<dd>Create a condition variable. Your code should associate a wait queue with
+the condition variable so that threads can wait in this queue.</dd>
+
+<dt><b>void cv_destroy(struct cv *cv):</b></dt>
+<dd>Destroy the condition variable. Be sure to check that no threads are waiting
+on the condition variable.</dd>
+
+<dt><b>void cv_wait(struct cv *cv, struct lock *lock):</b></dt>
+<dd>Suspend the calling thread on the condition variable <tt>cv</tt>. Be sure to
+check that the calling thread had acquired <tt>lock</tt> when this call is
+made. You will need to release the lock before waiting, and reacquire it before
+returning from this function.</dd>
+
+<dt><b>void cv_signal(struct cv *cv, struct lock *lock):</b></dt>
+<dd>Wake up one thread that is waiting on the condition variable <tt>cv</tt>. Be
+sure to check that the calling thread had acquired <tt>lock</tt> when this call
+is made.</dd>
+
+<dt><b>void cv_broadcast(struct cv *cv, struct lock *lock):</b></dt>
+<dd>Wake up all threads that are waiting on the condition
+variable <tt>cv</tt>. Be sure to check that the calling thread had
+acquired <tt>lock</tt> when this call is made.</dd>
+
+</dl>
+
+<p>The <tt>lock_acquire</tt>, <tt>lock_release</tt> functions, and
+the <tt>cv_wait</tt>, <tt>cv_signal</tt> and <tt>cv_broadcast</tt> functions
+access shared data structures (which ones?), so be sure to enforce mutual
+exclusion.</p>
+
+<p>Go ahead and implement these functions in your thread library
+in <tt>thread.c</tt>.</p>
+
+<p>After you implement these functions, you can test your code by running
+the <tt>test_lock</tt> and the <tt>test_cv</tt> programs. To check whether these
+programs worked correctly, you can run the following tester commands:</p>
+
+<pre>    /cad2/ece344s/tester/scripts/lab3-05-lock.py
+    /cad2/ece344s/tester/scripts/lab3-06-cv-signal.py
+    /cad2/ece344s/tester/scripts/lab3-07-cv-broadcast.py    
+</pre>
+
+<h2>Hints and Advice</h2> 
+
+<p>You are encouraged to reuse <i>your own</i> code that you might have
+developed in the first lab or in previous courses for common data structures and operations such as queues, sorting, etc.</p>
+
+<p>You may <b>not</b> use code that subsumes the heart of this project (e.g.,
+you should not base your solution on wrappers of or code taken from the POSIX
+thread library). If in doubt, ask.</p>
+
+<p>This project does not require you to write a large number of lines of
+code. It does require you to think carefully about the code you write. Before
+you dive into writing code, it will pay to spend time planning and understanding
+the code you are going to write. If you think the problem through from beginning
+to end, this project will not be too hard. If you try to hack your way out of
+trouble, you will spend many frustrating nights in the lab. This project's main
+difficulty is in conceptualizing the solution. Once you overcome that hurdle,
+you will be surprised at the simplicity of the implementation!</p>
+
+<p>All the <a href="http://individual.utoronto.ca/davidlion/ece344/lab2.html#advice">hints and advice</a> from Lab 2 apply here
+as well.</p>
+
+<h2>Frequently Asked Questions</h2>
+
+<p>We have provided answers to various <a href="http://individual.utoronto.ca/davidlion/ece344/lab-assignments.html#faq">frequently asked questions (FAQ)</a>
+ about the lab. Make sure to go over them. We have provided answers to 
+many questions that students have asked in previous years, so you will 
+save time by going over these answers as you start working on the lab.</p>
+<p><b>Start early, we mean it!</b></p>
+
+<h2>Testing Your Code</h2>
+
+<p>You can test your entire code by using our auto-tester program at any time by
+following the <a href="http://individual.utoronto.ca/davidlion/ece344/testing.html">testing instructions.</a></p>
+
+<h2 id="using-git">Using Git</h2>
+
+<p>You should only modify the following files in this lab.</p>
+
+<pre>thread.c
+</pre>
+
+<p>You can find the files you have modified by running the <tt>git status</tt>
+command.</p>
+
+<p>You can commit your modified files to your local repository as follows:</p>
+
+<pre>git add thread.c
+git commit -m "Committing changes for Lab 3"
+</pre>
+
+<p>We suggest committing your changes frequently by rerunning the commands above
+(with different meaningful messages to the commit command), so that you can go
+back to see the changes you have made over time, if needed.</p>
+
+<p>Once you have tested your code, <b>and committed it</b> (check that by
+running <tt>git status</tt>), you can tag the assignment as done.</p>
+
+<pre>git tag Lab3-end
+</pre>
+
+<p>This tag names the last commit, and you can see that using the <tt>git
+log</tt> or the <tt>git show</tt> commands.</p>
+
+<p>If you want to see all the changes you have made in this lab, you can run
+the following <tt>git diff</tt> command.</p>
+
+<pre>git diff Lab3-start Lab3-end
+</pre>
+
+<p>More information for using the various git commands is available in
+the <a href="http://individual.utoronto.ca/davidlion/ece344/lab1.html#using-git">Lab 1 instructions</a>.</p>
+
+<h2>Code Submission</h2>
+
+<p>Make sure to add the <tt>Lab3-end</tt> tag to your local repository as
+described above. Then run the following command to update your remote
+repository:</p>
+
+<pre>git push
+git push --tags
+</pre>
+
+<p>For more details regarding code submission, please follow
+the <a href="http://individual.utoronto.ca/davidlion/ece344/submit.html">lab submission instructions</a>.</p>
+
+<p>Please also make sure to test whether your submission succeeded by simulating
+our <a href="http://individual.utoronto.ca/davidlion/ece344/testing.html#marker">automated marker</a>.</p>
+<hr>
+<br><br><br><br><br><br><br><br><br><br>
+<br><br><br><br><br><br><br><br><br><br>
+<br><br><br><br><br><br><br><br><br><br>
+<br>
+<br>
+</div>
+
+
+
+</body></html>
