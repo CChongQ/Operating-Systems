@@ -11,9 +11,9 @@
     - **Linked List**
     - **Hash Table**
 - Lab 2&3 - Thread
-  - Create a libarary of functions that define **user-level therads package**.
-  - The program can create theads, destory threads and run threads concurrently on a single processor.
+  - Create a library of functions that define **user-level threads package**.
+  - The program can create threads, destroy threads and run threads concurrently on a single processor.
   - The program is able to block mutual exclusion and synchronization.
 - Lab 4&5 - Web Server
   - Develop a **multi-threaded web server** and evaluate its performance
-  - Improve the multi-threaded webserver, change in into a **caching web server** to increase efficiency.
+  - Improve the multi-threaded web server, change it into a **caching web server** to increase efficiency.
