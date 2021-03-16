@@ -1,5 +1,6 @@
-# Operating-Systems
-### Third year Operating Systems course
+# Operating Systems
+
+## Lab Information
 - Programming Language: C
 - Lab1 - Warmup: 
   - Review C by writing some C programs
